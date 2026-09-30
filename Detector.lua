@@ -44,33 +44,92 @@ local INTERRUPTS = {
 }
 Detector.INTERRUPTS = INTERRUPTS
 
+-- Cooldown de base par sort, en secondes. Ne sert que lorsque le client rend le cooldown
+-- secret (moteur 12.x en combat) : le détecteur déduit alors le cooldown du dernier lancer
+-- du joueur. Valeurs Classic (rangs de Forever) ; RETAIL_COOLDOWNS corrige les ids communs
+-- dont la durée diffère sur retail. Une durée lue hors combat (NS.lastCooldownDuration)
+-- prime toujours sur ces tables : talents et rangs sont ainsi rattrapés.
+local BASE_COOLDOWNS = {
+    [6552] = 10, [72] = 12,                      -- Pummel, Shield Bash
+    [1766] = 10,                                 -- Kick
+    [2139] = 30,                                 -- Counterspell
+    [57994] = 12, [8042] = 6,                    -- Wind Shear, Earth Shock
+    [15487] = 45,                                -- Silence
+    [106839] = 15, [80965] = 10, [16979] = 15,   -- Skull Bash, Feral Charge
+    [96231] = 15, [31935] = 15,                  -- Rebuke, Avenger's Shield
+    [47528] = 15, [47476] = 60,                  -- Mind Freeze, Strangulate
+    [147362] = 24, [187707] = 15, [34490] = 20,  -- Counter Shot, Muzzle, Silencing Shot
+    [19647] = 24, [119910] = 24, [132409] = 24,  -- Spell Lock
+    [116705] = 15,                               -- Spear Hand Strike
+    [183752] = 15,                               -- Disrupt
+    [351338] = 40,                               -- Quell
+}
+local RETAIL_COOLDOWNS = { [6552] = 15, [1766] = 15, [2139] = 24 }
+local DEFAULT_COOLDOWN = 15
+
 function Detector:ResolveInterrupt()
+    local previous = self.interruptSpell
     local override = NS.db and NS.db.spellId
     if override then
         self.interruptSpell = override
         self.interruptName  = NS.GetSpellName(override) or tostring(override)
-        return override
-    end
-
-    local _, class = UnitClass("player")
-    local candidates = INTERRUPTS[class or ""]
-    self.interruptSpell, self.interruptName = nil, nil
-    if not candidates then return nil end
-    for i = 1, #candidates do
-        if NS.KnowsSpell(candidates[i]) then
-            self.interruptSpell = candidates[i]
-            self.interruptName  = NS.GetSpellName(candidates[i])
-            return self.interruptSpell
+    else
+        local _, class = UnitClass("player")
+        local candidates = INTERRUPTS[class or ""] or {}
+        self.interruptSpell, self.interruptName = nil, nil
+        for i = 1, #candidates do
+            if NS.KnowsSpell(candidates[i]) then
+                self.interruptSpell = candidates[i]
+                self.interruptName  = NS.GetSpellName(candidates[i])
+                break
+            end
         end
     end
-    return nil
+    -- Autre sort suivi : le lancer mémorisé pour le cooldown déduit ne le concerne pas.
+    -- SPELLS_CHANGED re-résout souvent le même sort : on ne l'oublie pas dans ce cas.
+    if self.interruptSpell ~= previous then self.interruptUsedAt = nil end
+    return self.interruptSpell
 end
 
---- Cooldown restant du kick. nil = pas d'interrupt connu.
+--- Cooldown de base du kick suivi, pour le cooldown déduit.
+function Detector:BaseCooldown()
+    local id = self.interruptSpell
+    return NS.lastCooldownDuration[id]
+        or (NS.isRetail and not NS.isForever and RETAIL_COOLDOWNS[id])
+        or BASE_COOLDOWNS[id]
+        or DEFAULT_COOLDOWN
+end
+
+--- Cooldown restant du kick. nil = pas d'interrupt connu. Second retour : "api" quand le
+-- client l'a rendu, "deduced" quand il le garde secret (moteur 12.x en combat) : le
+-- cooldown est alors déduit du dernier lancer du joueur (UNIT_SPELLCAST_SUCCEEDED sur
+-- "player", jamais secret), ou considéré prêt tant qu'aucun lancer n'a été vu.
 function Detector:InterruptRemaining()
     if not self.interruptSpell then return nil end
-    return NS.GetSpellRemaining(self.interruptSpell)
+    local remaining, secret = NS.GetSpellRemaining(self.interruptSpell)
+    if not secret then return remaining, "api" end
+    if not self.interruptUsedAt then return 0, "deduced" end
+    remaining = self.interruptUsedAt + self:BaseCooldown() - GetTime()
+    return remaining > 0 and remaining or 0, "deduced"
 end
+
+--- Lancer réussi d'un sort par le joueur : si c'est le kick suivi (id exact ou même nom,
+-- pour les rangs Classic), son cooldown part maintenant.
+function Detector:NoteInterruptCast(spellId)
+    if not self.interruptSpell or not spellId or NS.IsSecret(spellId) then return end
+    if spellId ~= self.interruptSpell and NS.GetSpellName(spellId) ~= self.interruptName then return end
+    self.interruptUsedAt = GetTime()
+    self:Evaluate()
+end
+
+-- Frame à part : Detector filtre UNIT_SPELLCAST_SUCCEEDED sur target/focus (RegisterUnitEvent
+-- remplace la liste d'unités à chaque appel), et le joueur n'est pas une unité surveillée.
+-- "pet" : Spell Lock est lancé par le familier du démoniste. Ses sorts restent lisibles.
+local playerCasts = CreateFrame("Frame")
+playerCasts:SetScript("OnEvent", function(_, _, unit, _, spellId)
+    -- Sans RegisterUnitEvent (vieux clients), l'event arrive pour toutes les unités.
+    if unit == "player" or unit == "pet" then Detector:NoteInterruptCast(spellId) end
+end)
 
 --------------------------------------------------------------------------------
 -- Incantations lues dans le combat log
@@ -294,7 +353,7 @@ end)
 --------------------------------------------------------------------------------
 
 function Detector:StatusLines()
-    local remaining = self:InterruptRemaining()
+    local remaining, cooldownSource = self:InterruptRemaining()
     local spell = self.interruptSpell
         and ("%s (%d)"):format(self.interruptName or "?", self.interruptSpell)
         or ("|cffff5555" .. L.STATUS_NONE .. "|r")
@@ -302,7 +361,9 @@ function Detector:StatusLines()
     local lines = {
         L.STATUS_INTERRUPT:format(spell) .. (NS.db.spellId and (" |cffaaaaaa" .. L.STATUS_FORCED .. "|r") or ""),
         L.STATUS_AVAILABLE:format(
-            remaining == nil and "?" or (remaining <= 0 and yes or L.STATUS_IN:format(remaining))),
+            remaining == nil and "?" or (remaining <= 0 and yes or L.STATUS_IN:format(remaining)))
+            .. (cooldownSource == "deduced"
+                and (" |cffaaaaaa" .. L.COOLDOWN_DEDUCED:format(self:BaseCooldown()) .. "|r") or ""),
         L.STATUS_FLAGS:format(
             NS.db.watchFocus ~= false and yes or no,
             NS.db.checkRange ~= false and yes or no,
@@ -358,6 +419,8 @@ NS:On("DB_READY", function()
         -- RegisterUnitEvent limite le coût aux unités surveillées quand il existe.
         NS.RegisterEventSafe(Detector, event, "target", "focus")
     end
+
+    NS.RegisterEventSafe(playerCasts, "UNIT_SPELLCAST_SUCCEEDED", "player", "pet")
 
     Detector:UpdateWatchedGUIDs()
     Detector:Wake()

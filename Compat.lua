@@ -44,6 +44,12 @@ NS.flavor = (projectId and (
 
 NS.isRetail = (NS.flavor == "retail")
 
+-- WoW Forever (1.60.x) : moteur 12.x avec les données Classic (rangs, cooldowns d'époque).
+-- Aucune constante WOW_PROJECT_* ne le désigne : seul le numéro d'interface (16001) le distingue.
+local _, _, _, interfaceVersion = GetBuildInfo()
+interfaceVersion = tonumber(interfaceVersion) or 0
+NS.isForever = interfaceVersion >= 16000 and interfaceVersion < 20000
+
 --------------------------------------------------------------------------------
 -- Détection d'events
 --------------------------------------------------------------------------------
@@ -80,6 +86,21 @@ function NS.RegisterEventSafe(frame, event, ...)
     frame:RegisterEvent(event)
     return true
 end
+
+--------------------------------------------------------------------------------
+-- Valeurs secrètes (moteur 12.x : retail et WoW Forever)
+--------------------------------------------------------------------------------
+-- Affichables, mais ni comparables ni testables (booléen) ni utilisables en clé de table.
+-- Chaque fonction de Compat qui peut en recevoir une rend nil pour « le client refuse de
+-- répondre », et l'appelant s'abstient.
+
+-- Résolue à l'appel : issecretvalue n'existe pas sur les clients d'avant 12.0, et la suite
+-- de tests la pose après le chargement.
+local function isSecret(value)
+    local issecretvalue = _G.issecretvalue
+    return issecretvalue ~= nil and issecretvalue(value)
+end
+NS.IsSecret = isSecret
 
 --------------------------------------------------------------------------------
 -- Spell API
@@ -124,16 +145,28 @@ function NS.KnowsSpell(spellId)
     if C_SpellBook and C_SpellBook.IsSpellKnown and C_SpellBook.IsSpellKnown(spellId) then return true end
     local name = NS.GetSpellName(spellId)
     if not name then return false end
-    return NS.GetSpellCooldown(name) ~= nil
+    -- Test booléen et non `~= nil` : sur moteur 12.x en combat, le startTime rendu est une
+    -- valeur secrète, que l'on peut tester mais pas comparer.
+    if NS.GetSpellCooldown(name) then return true end
+    return false
 end
 
+-- Dernière durée de cooldown lisible, par sort. Sur moteur 12.x (retail, WoW Forever) le
+-- cooldown d'un sort du joueur devient secret en combat (C_Secrets.ShouldCooldownsBeSecret) :
+-- cette durée, relevée hors combat, sert de base au cooldown déduit par le détecteur.
+NS.lastCooldownDuration = {}
+
 --- Cooldown restant d'un sort, en secondes. 0 = prêt. nil = sort inconnu.
+-- Second retour true : le client rend un cooldown secret (moteur 12.x en combat), le
+-- premier retour est alors nil et l'appelant décide seul.
 -- Le GCD (durée <= 1.5s) ne compte pas comme un cooldown : un kick reste
 -- annoncé comme disponible pendant le GCD, sinon l'alerte clignote à chaque sort lancé.
 function NS.GetSpellRemaining(spellId)
     local start, duration = NS.GetSpellCooldown(spellId)
     if not start then return nil end
+    if isSecret(start) or isSecret(duration) then return nil, true end
     if start == 0 or duration == 0 or duration <= 1.5 then return 0 end
+    NS.lastCooldownDuration[spellId] = duration
     local remaining = start + duration - GetTime()
     return remaining > 0 and remaining or 0
 end
@@ -154,16 +187,14 @@ end
 local UnitCastingInfo = _G.UnitCastingInfo
 local UnitChannelInfo = _G.UnitChannelInfo
 
--- Moteur 12.x (Midnight, WoW Forever 1.60) : sur une unité hostile, UnitCastingInfo rend des
--- « valeurs secrètes » : affichables, mais ni comparables ni testables. `notInterruptible` secret
--- est remplacé par ce que le client montre lui-même : l'événement NOT_INTERRUPTIBLE reçu pour
--- l'unité, ou le bouclier affiché sur la barre d'incantation Blizzard de cette unité.
--- Limite : un cast protégé dès son début n'émet pas NOT_INTERRUPTIBLE (la barre Blizzard lit
--- l'état initial dans UnitCastingInfo, secret lui aussi) : faute d'indice, il passe pour
--- interruptible et l'alerte part. `/ka status` montre, cible en incantation, si ce client
+-- Moteur 12.x (Midnight, WoW Forever 1.60) : sur une unité autre que le joueur, UnitCastingInfo
+-- rend des valeurs secrètes (hors combat aussi : C_Secrets.ShouldUnitSpellCastingBeSecret("target")
+-- est vrai sur Forever 1.60.1.70124). `notInterruptible` secret est remplacé par le seul repli
+-- légitime : l'événement NOT_INTERRUPTIBLE / INTERRUPTIBLE reçu pour l'unité. Le bouclier de la
+-- barre d'incantation Blizzard n'en est pas un : son état IsShown() hérite du secret.
+-- Limite : un cast protégé dès son début n'émet pas NOT_INTERRUPTIBLE : faute d'indice, il passe
+-- pour interruptible et l'alerte part. `/ka status` montre, cible en incantation, si ce client
 -- rend la valeur secrète et sur quel repli on s'appuie.
-local isSecret = _G.issecretvalue or function() return false end
-NS.IsSecret = isSecret
 
 -- [unit] = true après NOT_INTERRUPTIBLE, false après INTERRUPTIBLE, nil (aucune info) au cast suivant.
 NS.castShield = {}
@@ -190,23 +221,6 @@ for _, event in ipairs({
     pcall(shieldFrame.RegisterEvent, shieldFrame, event)
 end
 
--- Bouclier « non interruptible » tel que dessiné par l'interface Blizzard (état de frame, jamais secret).
-local function ShieldShownByUI(unit)
-    local bar
-    if unit == "target" then bar = _G.TargetFrameSpellBar
-    elseif unit == "focus" then bar = _G.FocusFrameSpellBar
-    elseif C_NamePlate and C_NamePlate.GetNamePlateForUnit then
-        local plate = C_NamePlate.GetNamePlateForUnit(unit)
-        bar = plate and plate.UnitFrame and plate.UnitFrame.castBar
-    end
-    local shield = bar and (bar.BorderShield or bar.borderShield)
-    if not (shield and shield.IsShown) then return nil end
-    -- Sur 12.x, l'état d'affichage du bouclier hérite du secret de l'incantation : inutilisable alors.
-    local shown = shield:IsShown()
-    if isSecret(shown) then return nil end
-    return shown
-end
-
 local function ReadCast(isChannel, unit, name, _, texture, startTime, endTime, _, a7, a8, a9)
     if not name then return nil end
     local notInterruptible, spellId
@@ -215,12 +229,11 @@ local function ReadCast(isChannel, unit, name, _, texture, startTime, endTime, _
     else
         if type(a8) == "number" then spellId = a8 else notInterruptible, spellId = a8, a9 end
     end
-    -- shieldSource : "api" (valeur lue), "event" (secrète, repli NOT_INTERRUPTIBLE / bouclier
-    -- Blizzard) ou "unknown" (secrète, aucun repli : interruptible par défaut). Diagnostic seulement.
+    -- shieldSource : "api" (valeur lue), "event" (secrète, repli NOT_INTERRUPTIBLE) ou
+    -- "unknown" (secrète, aucun repli : interruptible par défaut). Diagnostic seulement.
     local shieldSource = "api"
     if isSecret(notInterruptible) then
         local fallback = NS.castShield[unit]
-        if fallback == nil then fallback = ShieldShownByUI(unit) end
         shieldSource = fallback ~= nil and "event" or "unknown"
         notInterruptible = fallback or false
     else

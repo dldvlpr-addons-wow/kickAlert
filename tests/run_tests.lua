@@ -41,6 +41,18 @@ for name, id in pairs({
     _G.SOUNDKIT[name] = _G.SOUNDKIT[name] or id
 end
 
+-- Valeurs secrètes (moteur 12.x) : une table à métatable qui lève sur l'arithmétique, la
+-- comparaison ordonnée et l'indexation, comme le client. `==` entre une table et un nombre
+-- rend false sans lever en Lua : ce cas-là n'est pas reproductible ici. issecretvalue n'est
+-- posée que par la suite « Valeurs secrètes » : au chargement, sa présence signifierait
+-- « combat log interdit » et le repli combat log ne serait plus testé.
+local SecretMeta = {}
+for _, op in ipairs({ "__add", "__sub", "__mul", "__div", "__unm", "__lt", "__le", "__len", "__call", "__index" }) do
+    SecretMeta[op] = function() error("attempt to use a secret value") end
+end
+function Mock.Secret(value) return setmetatable({ value = value }, SecretMeta) end
+function Mock.IsSecret(v) return getmetatable(v) == SecretMeta end
+
 local realPlaySound = _G.PlaySound
 Mock.soundWillPlay = true
 _G.PlaySound = function(id, channel)
@@ -323,8 +335,6 @@ SlashCmdList.KICKALERT("spell auto")
 equal(Detector.interruptSpell, 1766, "/ka spell auto")
 
 -- /ka status : une ligne sur l'incantation de la cible quand elle lance quelque chose.
--- Le chemin « valeur secrète » (moteur 12.x) n'est pas testable ici : Compat.lua capture
--- issecretvalue au chargement et le mock ne l'expose pas.
 equal(#Detector:StatusLines(), 4, "/ka status : 4 lignes sans incantation")
 StartCast(17086, true)
 local statusLines = Detector:StatusLines()
@@ -548,6 +558,90 @@ end
 equal(ns.LocaleName("frFR"), "Français", "nom lisible d'une langue")
 
 --------------------------------------------------------------------------------
+
+suite("Valeurs secrètes (moteur 12.x : retail, WoW Forever)")
+_G.issecretvalue = Mock.IsSecret
+ns.lastCooldownDuration[1766] = nil  -- durée apprise par la suite « Détection »
+Mock.units.target = { guid = BOSS_GUID, name = "Onyxia", health = 100, healthMax = 100 }
+Mock.FireEvent("PLAYER_TARGET_CHANGED")
+ns.db.spellId = nil
+Detector:ResolveInterrupt()
+Detector.interruptUsedAt = nil
+Detector:ClearAlert()
+
+-- Cooldown du kick secret (en combat) : Compat rend nil + true, sans comparer.
+Mock.cooldowns[1766] = { start = Mock.Secret(Mock.now), duration = Mock.Secret(10) }
+local secretRemaining, secretFlag = ns.GetSpellRemaining(1766)
+ok(secretRemaining == nil and secretFlag == true, "GetSpellRemaining : cooldown secret = nil, true")
+local savedIsSpellKnown = _G.IsSpellKnown
+_G.IsSpellKnown = nil
+ok(ns.KnowsSpell(1766), "KnowsSpell : repli par nom sans comparaison sur un startTime secret")
+_G.IsSpellKnown = savedIsSpellKnown
+
+StartCast(17086, false)
+ok(Text:IsShown(), "cooldown secret, aucun kick vu : alerte (kick supposé prêt)")
+Mock.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-guid", 1766)
+equal(Text:IsShown(), false, "kick lancé par le joueur : cooldown déduit, alerte retirée")
+equal(Detector:BaseCooldown(), retail and 15 or 10, "cooldown de base selon la saveur")
+ok(Detector:StatusLines()[2]:find(ns.L.COOLDOWN_DEDUCED:format(Detector:BaseCooldown()), 1, true) ~= nil,
+    "/ka status : cooldown déduit signalé")
+Mock.Advance(Detector:BaseCooldown() - 1)
+equal(Text:IsShown(), false, "cooldown déduit encore en cours")
+Mock.Advance(1.2)
+ok(Text:IsShown(), "cooldown déduit écoulé : alerte")
+
+-- Une durée lue hors combat prime sur la table de base.
+Mock.cooldowns[1766] = { start = Mock.now, duration = 12 }
+Mock.Advance(0.2)
+equal(ns.lastCooldownDuration[1766], 12, "durée lisible mémorisée")
+Mock.cooldowns[1766] = { start = Mock.Secret(Mock.now), duration = Mock.Secret(12) }
+equal(Detector:BaseCooldown(), 12, "durée lue hors combat prioritaire sur la table")
+
+-- Rang supérieur (autre id, même nom) reconnu ; le kick d'une autre unité ignoré.
+Mock.spells[1767] = { name = "Kick", icon = "icon-1767" }
+Detector.interruptUsedAt = nil
+Mock.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-guid", 1767)
+ok(Detector.interruptUsedAt ~= nil, "rang supérieur du kick (même nom) reconnu")
+Detector.interruptUsedAt = 5
+Mock.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "target", "cast-guid", 1766)
+equal(Detector.interruptUsedAt, 5, "kick lancé par la cible : ignoré")
+-- `Mock.Secret ~= 1766` ne lève pas en Lua pur : un espion sur GetSpellName prouve que la
+-- garde IsSecret coupe avant toute lecture du spellId.
+local realGetSpellName = ns.GetSpellName
+ns.GetSpellName = function(id)
+    if Mock.IsSecret(id) then error("GetSpellName a reçu un spellId secret") end
+    return realGetSpellName(id)
+end
+Mock.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-guid", Mock.Secret(1766))
+equal(Detector.interruptUsedAt, 5, "spellId secret : ignoré sans comparer")
+ns.GetSpellName = realGetSpellName
+Mock.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "pet", "cast-guid", 1767)
+ok(Detector.interruptUsedAt ~= 5, "kick lancé par le familier (Spell Lock) : reconnu")
+Mock.spells[1767] = nil
+-- Sort suivi changé : le lancer mémorisé ne le concerne plus. Même sort re-résolu : gardé.
+Detector.interruptUsedAt = 5
+Detector:ResolveInterrupt()
+equal(Detector.interruptUsedAt, 5, "SPELLS_CHANGED, même sort : lancer mémorisé gardé")
+SlashCmdList.KICKALERT("spell 2139")
+equal(Detector.interruptUsedAt, nil, "/ka spell <autre id> : lancer mémorisé oublié")
+SlashCmdList.KICKALERT("spell auto")
+
+-- notInterruptible secret : seul l'événement NOT_INTERRUPTIBLE / INTERRUPTIBLE fait foi.
+Mock.SetCast("target", 17086, false)
+Mock.casts.target.notInterruptible = Mock.Secret(true)
+local _, _, _, _, protected, _, _, shieldSource = ns.GetCastInfo("target")
+ok(protected == false and shieldSource == "unknown", "notInterruptible secret sans événement : interruptible, source unknown")
+Mock.FireEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "target")
+_, _, _, _, protected, _, _, shieldSource = ns.GetCastInfo("target")
+ok(protected == true and shieldSource == "event", "NOT_INTERRUPTIBLE reçu : protégé, source event")
+Mock.FireEvent("UNIT_SPELLCAST_INTERRUPTIBLE", "target")
+_, _, _, _, protected, _, _, shieldSource = ns.GetCastInfo("target")
+ok(protected == false and shieldSource == "event", "INTERRUPTIBLE reçu : interruptible, source event")
+
+StopCast()
+Mock.cooldowns[1766] = nil
+ns.lastCooldownDuration[1766] = nil
+Detector.interruptUsedAt = nil
 
 suite("Miroir CVar (SavedVariables jamais relues sur WoW Forever)")
 local Mirror = ns.Mirror

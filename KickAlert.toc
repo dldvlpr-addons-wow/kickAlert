@@ -1,7 +1,7 @@
 ## Interface: 11509, 11600, 16001, 20506, 30405, 40402, 50504, 120100
 ## Title: KickAlert
 ## Notes: Alerte texte, halo d'écran et son quand la cible lance un sort interruptible et que ton kick est disponible. Gratuit, code source ouvert.
-## Version: 1.1.0
+## Version: 1.2.0
 ## X-Curse-Project-ID: 1702521
 ## X-Wago-ID: QKyqw5K7
 ## SavedVariables: KickAlertDB

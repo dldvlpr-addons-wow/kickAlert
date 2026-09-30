@@ -33,6 +33,13 @@ the table does not cover.
 On clients where `UnitCastingInfo` returns nothing for a hostile unit, the combat log
 (`SPELL_CAST_START`) takes over and the spell is assumed interruptible.
 
+On the 12.x engine (retail Midnight, WoW Forever), the client hides values from addons in combat
+("secret values"): whether the target's cast is protected is only known through the
+`UNIT_SPELLCAST_(NOT_)INTERRUPTIBLE` events (a cast protected from its very start is assumed
+interruptible), and your interrupt's cooldown is deduced
+from your own casts (`UNIT_SPELLCAST_SUCCEEDED` on `player`) plus the spell's base cooldown, or the
+last cooldown read outside combat. `/ka status` tells which source is in use.
+
 ## Installation
 
 Copy the `KickAlert` folder into `World of Warcraft/_<version>_/Interface/AddOns/`.
