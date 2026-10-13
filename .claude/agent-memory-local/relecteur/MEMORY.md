@@ -1,1 +1,0 @@
-- [Baseline sans git](reference_baseline_sans_git.md) — diff contre la copie déployée dans _classic_beta_/Interface/AddOns/KickAlert

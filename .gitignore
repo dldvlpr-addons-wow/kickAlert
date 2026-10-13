@@ -5,3 +5,6 @@ KickAlert-*.zip
 
 # Sortie du packager BigWigs lancé en local.
 .release/
+
+# Mémoire locale des agents Claude Code.
+.claude/agent-memory-local/
