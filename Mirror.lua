@@ -22,7 +22,6 @@ Mirror.CVAR = ADDON_NAME .. "Mirror"
 Mirror.SLOTS = 8
 Mirror.CHUNK = 4000
 Mirror.PREFIX = "MIR1:"
-Mirror.IGNORE = {}          -- clés de premier niveau jamais recopiées dans les CVars (journaux, caches)
 Mirror.HOST = "g_addonCategoriesCollapsed"   -- SavedVariables de Blizzard_AddOnList, relue par ce client
 Mirror.HOST_KEY = ADDON_NAME
 
@@ -113,18 +112,16 @@ function Mirror.Deserialize(text)
 end
 
 --- Copie de `value` sans les scalaires égaux à `defaults` (le chargement les recrée).
-local function Prune(value, defaults, top)
+local function Prune(value, defaults)
     local out = {}
     for key, child in pairs(value) do
-        if not (top and Mirror.IGNORE[key]) then
-            local default
-            if type(defaults) == "table" then default = defaults[key] end   -- pas de `and/or` : false est un défaut
-            if type(child) == "table" then
-                local pruned = Prune(child, default)
-                if next(pruned) ~= nil then out[key] = pruned end
-            elseif child ~= default then
-                out[key] = child
-            end
+        local default
+        if type(defaults) == "table" then default = defaults[key] end   -- pas de `and/or` : false est un défaut
+        if type(child) == "table" then
+            local pruned = Prune(child, default)
+            if next(pruned) ~= nil then out[key] = pruned end
+        elseif child ~= default then
+            out[key] = child
         end
     end
     return out
@@ -173,7 +170,7 @@ end
 -- Trop grande pour les tranches, ou écriture refusée : rien n'est retenu, on réessaie plus tard.
 function Mirror:Write(tbl, defaults)
     if type(tbl) ~= "table" or not self:Register() then return false end
-    local text = self.Serialize(Prune(tbl, defaults, true))
+    local text = self.Serialize(Prune(tbl, defaults))
     if text == lastText or #text > self.SLOTS * self.CHUNK then return false end
     if not self.Deserialize(text) then return false end   -- illisible (nan, clé vide) : ne pas remplacer un miroir sain
     local written = true

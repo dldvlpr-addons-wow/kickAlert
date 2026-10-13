@@ -125,10 +125,6 @@ NS.GetSpellInfo = (C_Spell and C_Spell.GetSpellInfo)
     end
     or _G.GetSpellInfo
 
-NS.GetSpellTexture = (C_Spell and C_Spell.GetSpellTexture)
-    or _G.GetSpellTexture
-    or function(id) return (select(3, NS.GetSpellInfo(id))) end
-
 function NS.GetSpellName(id)
     local name = NS.GetSpellInfo(id)
     return name
@@ -220,6 +216,16 @@ for _, event in ipairs({
 }) do
     pcall(shieldFrame.RegisterEvent, shieldFrame, event)
 end
+
+-- Événements de cast d'une unité surveillée, partagés par Detector et Nameplates. La liste du
+-- bouclier ci-dessus est plus courte exprès : DELAYED ou FAILED ne doivent pas effacer l'état.
+NS.UNIT_CAST_EVENTS = {
+    "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_DELAYED",
+    "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
+    "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_SUCCEEDED",
+    "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED",
+    "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_STOP", -- retail (évocateur)
+}
 
 local function ReadCast(isChannel, unit, name, _, texture, startTime, endTime, _, a7, a8, a9)
     if not name then return nil end
@@ -630,7 +636,6 @@ NS.has = {
     -- Sans UnitCastingInfo, l'incantation d'une cible ne se lit que dans le
     -- combat log : le détecteur bascule sur ce repli.
     unitCastInfo   = _G.UnitCastingInfo ~= nil,
-    nativeTimers   = hasNativeTimer,
     focus          = NS.EventExists("PLAYER_FOCUS_CHANGED"),
     namePlates     = _G.C_NamePlate ~= nil
         and C_NamePlate.GetNamePlateForUnit ~= nil and C_NamePlate.GetNamePlates ~= nil,

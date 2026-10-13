@@ -172,7 +172,7 @@ end
 --------------------------------------------------------------------------------
 
 suite("Compat")
-equal(ns.has.nativeTimers, useNativeTimers, "détection de C_Timer")
+equal(ns.Timer.native, useNativeTimers, "détection de C_Timer")
 equal(ns.flavor, retail and "retail" or "vanilla", "flavor détecté")
 ok(ns.db ~= nil and ns.db.text.label == "KICK", "SavedVariables initialisées avec les défauts")
 ok(ns.KnowsSpell(1766), "KnowsSpell : sort du grimoire")

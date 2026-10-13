@@ -3,7 +3,7 @@
 ## Notes: Alerte texte, halo d'écran et son quand la cible lance un sort interruptible et que ton kick est disponible. Gratuit, code source ouvert.
 ## Version: 1.2.0
 ## X-Curse-Project-ID: 1702521
-## X-Wago-ID: QKyqw5K7
+## X-Wago-ID: E6gzQ3N1
 ## SavedVariables: KickAlertDB
 ## OptionalDeps: LibSharedMedia-3.0
 ## X-License: GPL-3.0-or-later

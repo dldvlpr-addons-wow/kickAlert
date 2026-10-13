@@ -409,13 +409,7 @@ NS:On("DB_READY", function()
         NS.RegisterEventSafe(Detector, event)
     end
 
-    for _, event in ipairs({
-        "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_DELAYED",
-        "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
-        "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_SUCCEEDED",
-        "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED",
-        "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_STOP", -- retail (évocateur)
-    }) do
+    for _, event in ipairs(NS.UNIT_CAST_EVENTS) do
         -- RegisterUnitEvent limite le coût aux unités surveillées quand il existe.
         NS.RegisterEventSafe(Detector, event, "target", "focus")
     end

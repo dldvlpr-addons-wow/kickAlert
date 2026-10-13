@@ -40,17 +40,23 @@ Text.background:SetAllPoints()
 NS.SetSolidColor(Text.background, 0, 0, 0, 0.5)
 Text.background:Hide()
 
-function Text:Apply()
-    local cfg = NS.db.text
+--- Police, texte et couleur d'un FontString d'alerte (texte central et nameplates).
+function NS.StyleLabel(label, cfg, defaultFont, text)
     -- Chaîne vide et non nil : depuis 10.0 SetFont exige les flags.
     local outline = cfg.outline ~= "NONE" and cfg.outline or ""
-    self.label:SetFont(cfg.font, cfg.size, outline)
-    if not self.label:GetFont() then
+    -- Police avant texte : SetText sans police est une erreur sur les clients récents.
+    label:SetFont(cfg.font, cfg.size, outline)
+    if not label:GetFont() then
         -- Chemin de police invalide (LibSharedMedia disparu) : repli Blizzard.
-        self.label:SetFont(NS.DEFAULTS.text.font, cfg.size, outline)
+        label:SetFont(defaultFont, cfg.size, outline)
     end
-    self.label:SetText(cfg.label ~= "" and cfg.label or "KICK")
-    self.label:SetTextColor(cfg.color.r, cfg.color.g, cfg.color.b, cfg.color.a)
+    label:SetText(text)
+    label:SetTextColor(cfg.color.r, cfg.color.g, cfg.color.b, cfg.color.a)
+end
+
+function Text:Apply()
+    local cfg = NS.db.text
+    NS.StyleLabel(self.label, cfg, NS.DEFAULTS.text.font, cfg.label ~= "" and cfg.label or "KICK")
     local width = self.label.GetStringWidth and self.label:GetStringWidth() or cfg.size * 4
     local height = self.label.GetStringHeight and self.label:GetStringHeight() or cfg.size
     self:SetSize(math.max(width + 20, 60), height + 20)

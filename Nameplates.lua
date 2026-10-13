@@ -27,20 +27,6 @@ local function GetIndicator(unit)
     return frame
 end
 
-local function ApplyStyle(frame)
-    local cfg = NS.db.nameplate.text
-    -- Chaîne vide et non nil : depuis 10.0 SetFont exige les flags.
-    local outline = cfg.outline ~= "NONE" and cfg.outline or ""
-    -- Police avant texte : SetText sans police est une erreur sur les clients récents.
-    frame.label:SetFont(cfg.font, cfg.size, outline)
-    if not frame.label:GetFont() then
-        -- Chemin de police invalide (LibSharedMedia disparu) : repli Blizzard.
-        frame.label:SetFont(NS.DEFAULTS.nameplate.text.font, cfg.size, outline)
-    end
-    frame.label:SetText(cfg.label)
-    frame.label:SetTextColor(cfg.color.r, cfg.color.g, cfg.color.b, cfg.color.a)
-end
-
 -- Ré-ancre à chaque appel : le frame rendu par GetNamePlateForUnit peut changer
 -- d'un NAME_PLATE_UNIT_ADDED à l'autre pour le même token (pool Blizzard).
 local function AttachToNameplate(unit, frame)
@@ -66,7 +52,8 @@ local function EvaluateUnit(unit)
     -- Frame nameplate pas encore prêt (juste après ADDED) : le prochain
     -- UNIT_SPELLCAST_* ou le rattrapage DB_READY réessaiera.
     if not AttachToNameplate(unit, frame) then return end
-    ApplyStyle(frame)
+    local cfg = NS.db.nameplate.text
+    NS.StyleLabel(frame.label, cfg, NS.DEFAULTS.nameplate.text.font, cfg.label)
     frame:Show()
 end
 
@@ -114,13 +101,7 @@ NS:On("DB_READY", function()
     NS.RegisterEventSafe(Nameplate, "NAME_PLATE_UNIT_ADDED")
     NS.RegisterEventSafe(Nameplate, "NAME_PLATE_UNIT_REMOVED")
     NS.RegisterEventSafe(Nameplate, "PLAYER_ENTERING_WORLD")
-    for _, event in ipairs({
-        "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_DELAYED",
-        "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
-        "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_SUCCEEDED",
-        "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED",
-        "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_STOP", -- retail (évocateur)
-    }) do
+    for _, event in ipairs(NS.UNIT_CAST_EVENTS) do
         -- Sans unité : doit couvrir tous les nameplates, pas seulement target/focus.
         NS.RegisterEventSafe(Nameplate, event)
     end
