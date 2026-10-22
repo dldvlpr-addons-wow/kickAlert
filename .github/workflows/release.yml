@@ -39,3 +39,21 @@ jobs:
           fetch-depth: 0
 
       - uses: BigWigsMods/packager@v2
+
+      # Release publiée : muscalab.com se recompile et la lit (version et journal de la page addon).
+      # Lancée même si une étape précédente échoue : la release GitHub existe peut-être déjà.
+      - name: Recompilation de muscalab.com
+        if: ${{ !cancelled() }}
+        env:
+          SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          SITE_REPOSITORY: ${{ vars.SITE_REPOSITORY }}
+        run: |
+          if [ -z "$SITE_DISPATCH_TOKEN" ] || [ -z "$SITE_REPOSITORY" ]; then
+            echo "::warning::SITE_DISPATCH_TOKEN ou SITE_REPOSITORY absent, recompilation du site ignorée"
+            exit 0
+          fi
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $SITE_DISPATCH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -d '{"ref":"main"}' \
+            "https://api.github.com/repos/$SITE_REPOSITORY/actions/workflows/deploy.yml/dispatches" \
+            || echo "::warning::Échec de la demande de recompilation du site"
