@@ -125,6 +125,7 @@ data, no telemetry.
 
 World of Warcraft® and Blizzard Entertainment® are trademarks of Blizzard Entertainment, Inc.
 KickAlert is an independent project, neither affiliated with nor endorsed by Blizzard Entertainment.
+Website: https://muscalab.com/addons/musca-kickalert
 
 ## License
 
