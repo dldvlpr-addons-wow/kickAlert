@@ -352,14 +352,19 @@ end)
 -- État lisible (/ka status)
 --------------------------------------------------------------------------------
 
-function Detector:StatusLines()
-    local remaining, cooldownSource = self:InterruptRemaining()
+--- Ligne « interrupt : … » partagée par /ka status et le panneau d'options.
+function Detector:InterruptLine()
     local spell = self.interruptSpell
         and ("%s (%d)"):format(self.interruptName or "?", self.interruptSpell)
         or ("|cffff5555" .. L.STATUS_NONE .. "|r")
+    return L.STATUS_INTERRUPT:format(spell) .. (NS.db.spellId and (" |cffaaaaaa" .. L.STATUS_FORCED .. "|r") or "")
+end
+
+function Detector:StatusLines()
+    local remaining, cooldownSource = self:InterruptRemaining()
     local yes, no = L.STATUS_YES, L.STATUS_NO
     local lines = {
-        L.STATUS_INTERRUPT:format(spell) .. (NS.db.spellId and (" |cffaaaaaa" .. L.STATUS_FORCED .. "|r") or ""),
+        self:InterruptLine(),
         L.STATUS_AVAILABLE:format(
             remaining == nil and "?" or (remaining <= 0 and yes or L.STATUS_IN:format(remaining)))
             .. (cooldownSource == "deduced"

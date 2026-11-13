@@ -329,10 +329,19 @@ StopCast()
 ns.db.text.outline = "OUTLINE"
 
 suite("Commandes")
+Mock.knownSpells[2139] = true
 SlashCmdList.KICKALERT("spell 2139")
 equal(Detector.interruptSpell, 2139, "/ka spell <id>")
+Mock.knownSpells[2139] = nil
+SlashCmdList.KICKALERT("spell 9999")
+equal(Detector.interruptSpell, 2139, "/ka spell <id inconnu> : réglage gardé")
+ok(Mock.FindPrinted("9999"), "/ka spell <id inconnu> : message d'erreur")
+SlashCmdList.KICKALERT("spell abc")
+equal(ns.db.spellId, 2139, "/ka spell <texte> : réglage gardé")
+ok(Mock.FindPrinted("abc"), "/ka spell <texte> : message d'erreur")
 SlashCmdList.KICKALERT("spell auto")
 equal(Detector.interruptSpell, 1766, "/ka spell auto")
+ok(Detector:InterruptLine():find("1766", 1, true), "ligne d'interrupt du panneau")
 
 -- /ka status : une ligne sur l'incantation de la cible quand elle lance quelque chose.
 equal(#Detector:StatusLines(), 4, "/ka status : 4 lignes sans incantation")
@@ -622,8 +631,10 @@ Mock.spells[1767] = nil
 Detector.interruptUsedAt = 5
 Detector:ResolveInterrupt()
 equal(Detector.interruptUsedAt, 5, "SPELLS_CHANGED, même sort : lancer mémorisé gardé")
+Mock.knownSpells[2139] = true
 SlashCmdList.KICKALERT("spell 2139")
 equal(Detector.interruptUsedAt, nil, "/ka spell <autre id> : lancer mémorisé oublié")
+Mock.knownSpells[2139] = nil
 SlashCmdList.KICKALERT("spell auto")
 
 -- notInterruptible secret : seul l'événement NOT_INTERRUPTIBLE / INTERRUPTIBLE fait foi.

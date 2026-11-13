@@ -53,7 +53,7 @@ local function EvaluateUnit(unit)
     -- UNIT_SPELLCAST_* ou le rattrapage DB_READY réessaiera.
     if not AttachToNameplate(unit, frame) then return end
     local cfg = NS.db.nameplate.text
-    NS.StyleLabel(frame.label, cfg, NS.DEFAULTS.nameplate.text.font, cfg.label)
+    NS.StyleLabel(frame.label, cfg, NS.DEFAULTS.nameplate.text.font, cfg.label ~= "" and cfg.label or "KICK")
     frame:Show()
 end
 

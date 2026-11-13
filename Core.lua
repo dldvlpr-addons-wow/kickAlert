@@ -178,8 +178,20 @@ SlashCmdList.KICKALERT = function(msg)
         NS:Fire("RESET_ANCHORS")
         NS.Print(L.MSG_RESET)
     elseif command == "spell" then
-        -- /ka spell <id> force le sort d'interruption suivi, /ka spell auto revient à la détection.
-        NS.db.spellId = tonumber(argument)
+        -- /ka spell <id> force le sort d'interruption suivi, /ka spell auto (ou sans argument)
+        -- revient à la détection.
+        if argument == "" or argument == "auto" then
+            NS.db.spellId = nil
+        else
+            -- Un id que le personnage ne connaît pas coupait toutes les alertes sans rien
+            -- dire (cooldown illisible, donc jamais prêt) : refusé, réglage précédent gardé.
+            local spellId = tonumber(argument)
+            if not spellId or spellId <= 0 or spellId % 1 ~= 0 or not NS.KnowsSpell(spellId) then
+                NS.Print(string.format(L.MSG_SPELL_UNKNOWN, argument))
+                return
+            end
+            NS.db.spellId = spellId
+        end
         NS.Detector:ResolveInterrupt()
         NS.Print(NS.db.spellId and string.format(L.MSG_SPELL_FORCED, NS.Detector.interruptName or argument)
             or L.MSG_SPELL_AUTO)

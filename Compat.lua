@@ -139,6 +139,13 @@ function NS.KnowsSpell(spellId)
     if _G.IsPlayerSpell and IsPlayerSpell(spellId) then return true end
     if _G.IsSpellKnown and IsSpellKnown(spellId) then return true end
     if C_SpellBook and C_SpellBook.IsSpellKnown and C_SpellBook.IsSpellKnown(spellId) then return true end
+    -- Grimoire du familier (Spell Lock du démoniste) : banque Pet sur moteur 12.x,
+    -- second argument isPet sur les clients Classic.
+    if C_SpellBook and C_SpellBook.IsSpellKnown and Enum and Enum.SpellBookSpellBank then
+        if C_SpellBook.IsSpellKnown(spellId, Enum.SpellBookSpellBank.Pet) then return true end
+    elseif _G.IsSpellKnown and IsSpellKnown(spellId, true) then
+        return true
+    end
     local name = NS.GetSpellName(spellId)
     if not name then return false end
     -- Test booléen et non `~= nil` : sur moteur 12.x en combat, le startTime rendu est une

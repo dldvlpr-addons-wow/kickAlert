@@ -224,6 +224,14 @@ local function Build()
     end)
 
     Title(left, L.CFG_TRIGGER)
+    -- Sans interrupt connu, aucune alerte ne part : seul /ka status le disait.
+    -- Hauteur réservée pour le cas le plus long (ligne + explication).
+    local interruptNote = Note(left, NS.Detector:InterruptLine() .. "\n" .. L.CFG_INTERRUPT_NONE_HINT)
+    refreshers[#refreshers + 1] = function()
+        local line = NS.Detector:InterruptLine()
+        if not NS.Detector.interruptSpell then line = line .. "\n" .. L.CFG_INTERRUPT_NONE_HINT end
+        interruptNote:SetText(line)
+    end
     if NS.has.focus then
         Check(left, L.CFG_WATCH_FOCUS, function() return db.watchFocus end,
             function(v) db.watchFocus = v; NS.Detector:UpdateWatchedGUIDs(); NS.Detector:Wake() end)
@@ -242,11 +250,13 @@ local function Build()
     for _, f in ipairs(NS.GetFontList()) do fonts[#fonts + 1] = { name = f.name, value = f.path } end
     Cycle(left, L.CFG_FONT, fonts, function() return db.text.font end,
         function(v) db.text.font = v; ApplyText() end)
-    Cycle(left, L.CFG_OUTLINE, {
+    local outlines = {
         { name = L.OUTLINE_NONE, value = "NONE" },
         { name = L.OUTLINE_THIN, value = "OUTLINE" },
         { name = L.OUTLINE_THICK, value = "THICKOUTLINE" },
-    }, function() return db.text.outline end, function(v) db.text.outline = v; ApplyText() end)
+    }
+    Cycle(left, L.CFG_OUTLINE, outlines, function() return db.text.outline end,
+        function(v) db.text.outline = v; ApplyText() end)
     Slider(left, L.CFG_SIZE, 12, 128, 2, function() return db.text.size end,
         function(v) db.text.size = v; ApplyText() end)
     Color(left, L.CFG_TEXT_COLOR, db.text.color, ApplyText)
@@ -259,8 +269,12 @@ local function Build()
         Title(left, L.CFG_NAMEPLATES)
         Check(left, L.CFG_NAMEPLATES_ENABLE, function() return db.nameplate.enabled end,
             function(v) db.nameplate.enabled = v; NS.Nameplate:RefreshAll() end)
+        Edit(left, L.CFG_TEXT_LABEL, function() return db.nameplate.text.label end,
+            function(v) db.nameplate.text.label = v; NS.Nameplate:RefreshAll() end)
         Cycle(left, L.CFG_FONT, fonts, function() return db.nameplate.text.font end,
             function(v) db.nameplate.text.font = v; NS.Nameplate:RefreshAll() end)
+        Cycle(left, L.CFG_OUTLINE, outlines, function() return db.nameplate.text.outline end,
+            function(v) db.nameplate.text.outline = v; NS.Nameplate:RefreshAll() end)
         Slider(left, L.CFG_SIZE, 8, 48, 1, function() return db.nameplate.text.size end,
             function(v) db.nameplate.text.size = v; NS.Nameplate:RefreshAll() end)
         Color(left, L.CFG_COLOR, db.nameplate.text.color, function() NS.Nameplate:RefreshAll() end)
@@ -291,7 +305,8 @@ local function Build()
         function() return tostring(db.sound.sound or "") end,
         function(v)
             if v ~= "" then db.sound.sound = tonumber(v) or v end
-            NS.Sound:Play(true)
+            -- Chemin ou id invalide : sans ce message, l'alerte restait muette sans explication.
+            if not NS.Sound:Play(true) then NS.Print(L.MSG_SOUND_FAILED) end
         end)
     Button(right, L.CFG_SOUND_TEST, function()
         -- Un son injouable échouait en silence : on le dit plutôt que de laisser
